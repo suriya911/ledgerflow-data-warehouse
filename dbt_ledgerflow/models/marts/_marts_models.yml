@@ -55,21 +55,35 @@ models:
               values: ["BASIC", "PREMIUM", "CORPORATE", "SPECIALIZED"]
 
   - name: fact_transactions
-    description: "Central fact table — one row per transaction, FK to all dimensions"
+    description: "Central fact table — 6.36M PaySim rows with fraud intelligence"
     columns:
       - name: transaction_id
-        description: "Natural UUID PK from source system"
         tests:
           - not_null
           - unique
       - name: amount
         tests:
           - not_null
-      - name: flow_direction
-        tests:
-          - accepted_values:
-              values: ["INFLOW", "OUTFLOW"]
       - name: amount_bucket
         tests:
           - accepted_values:
               values: ["MICRO", "SMALL", "MEDIUM", "LARGE", "XLARGE"]
+      - name: is_fraud
+        tests:
+          - not_null
+      - name: is_flagged_fraud
+        tests:
+          - not_null
+
+  - name: fact_fraud_alerts
+    description: "Fraud analysis mart — actual fraud + flagged transactions with detection outcome labels"
+    columns:
+      - name: transaction_id
+        tests:
+          - not_null
+          - unique
+      - name: detection_outcome
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["TRUE_POSITIVE", "FALSE_POSITIVE", "FALSE_NEGATIVE", "TRUE_NEGATIVE"]

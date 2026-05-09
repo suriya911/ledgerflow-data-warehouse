@@ -1,24 +1,21 @@
--- stg_transactions.sql — Silver layer: clean and type raw transactions
+-- stg_transactions.sql — Silver layer: clean and type PaySim transactions
 --
--- What this model does step by step:
---   1. Pull from bronze.transactions (the raw landing table)
---   2. Cast every column to its correct data type
---      (bronze stores everything as text to avoid load failures)
---   3. Normalize strings: UPPER() + TRIM() so "debit", "DEBIT", " Debit " all
---      become "DEBIT" — consistent values that GX and dbt tests can validate
---   4. Filter out rows where transaction_id IS NULL (dedup guard —
---      if the same bad row was loaded twice, only take non-null PKs)
---   5. Expose only the columns downstream models should use
---      (_source_file and _loaded_at are internal audit columns, kept via _batch_id)
+-- Source: PaySim financial fraud simulation dataset (6.36M rows)
+-- Mapped from raw PaySim columns by data_generator/load_paysim.py
 --
--- Materialized as VIEW so it's always up to date with whatever is in bronze.
--- No storage cost — every time you query silver.stg_transactions, this SQL runs.
+-- Key differences from synthetic Faker data:
+--   - No 'status' column (PaySim doesn't have transaction status)
+--   - Added balance_before/after columns (real banking context)
+--   - Added is_fraud / is_flagged_fraud flags (drives fact_fraud_alerts mart)
+--   - transaction_type values: CASH_OUT, PAYMENT, CASH_IN, TRANSFER, DEBIT
+--   - Amounts are mobile money scale (avg ~$179K, max ~$92M)
+--
+-- Materialized as VIEW (always fresh, zero storage cost).
 
 {{ config(materialized='view') }}
 
 with source as (
 
-    -- source() resolves to bronze.transactions and registers lineage in dbt
     select * from {{ source('bronze', 'transactions') }}
 
 ),
@@ -30,33 +27,48 @@ cleaned as (
         account_id,
         customer_id,
 
-        -- Normalize free-text enums — removes whitespace and uppercases
-        upper(trim(transaction_type))   as transaction_type,
-        upper(trim(currency))           as currency,
-        upper(trim(merchant_category))  as merchant_category,
-        upper(trim(status))             as transaction_status,
+        -- PaySim type normalization (already uppercase, just trim whitespace)
+        upper(trim(transaction_type))       as transaction_type,
+        upper(trim(currency))               as currency,
+        upper(trim(merchant_category))      as merchant_category,
 
-        -- Cast to correct types
-        -- Bronze stores amounts as text; cast here once so all downstream
-        -- models get numeric arithmetic without repeating the cast.
-        cast(amount as decimal(18, 2))  as amount,
+        -- Financial amounts — PaySim uses mobile money scale (large values are normal)
+        cast(amount as decimal(18, 2))          as amount,
+        cast(balance_before as decimal(18, 2))  as balance_before,
+        cast(balance_after as decimal(18, 2))   as balance_after,
+        cast(dest_balance_before as decimal(18, 2)) as dest_balance_before,
+        cast(dest_balance_after as decimal(18, 2))  as dest_balance_after,
 
-        -- transaction_date has ~3% nulls — we keep them (GX will flag them)
-        -- Casting NULL stays NULL; no coalesce here — silver preserves truth
-        cast(transaction_date as date)  as transaction_date,
+        -- PaySim account identifiers (C = customer, M = merchant prefix)
+        orig_account_id,
+        dest_account_id,
 
-        cast(created_at as timestamp)   as created_at,
+        -- Fraud flags (cast to boolean for clarity)
+        cast(is_fraud as boolean)           as is_fraud,
+        cast(is_flagged_fraud as boolean)   as is_flagged_fraud,
 
-        -- Audit columns from load_bronze.py — useful for debugging data lineage
+        -- Fraud detection gap: transactions flagged but NOT actual fraud (false positives)
+        -- and transactions that ARE fraud but were NOT flagged (missed detections)
+        case
+            when cast(is_fraud as boolean) = true
+             and cast(is_flagged_fraud as boolean) = false then true
+            else false
+        end                                 as is_missed_fraud,
+
+        -- Dates
+        cast(transaction_date as date)      as transaction_date,
+        cast(created_at as timestamp)       as created_at,
+
+        -- Audit columns
         _loaded_at,
         _batch_id
 
     from source
 
-    -- Basic dedup guard: reject rows with no natural key
-    -- Real dedup (by transaction_id) happens in fact_transactions using unique_key
+    -- Basic dedup guard on primary key
     where transaction_id is not null
-      and amount        is not null
+      and amount is not null
+      and amount > 0   -- PaySim only has positive amounts (direction encoded in type)
 
 )
 

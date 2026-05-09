@@ -1,21 +1,8 @@
--- fact_transactions.sql — Central fact table (Gold layer / Star Schema)
+-- fact_transactions.sql — Central fact table with PaySim real data (Gold layer)
 --
--- The fact table is the CENTER of the star schema.
--- It stores every transaction event with:
---   - Foreign keys pointing to each dimension (customer, account, product)
---   - Additive measures (amount, absolute_amount) — numbers you can SUM/AVG
---   - Derived attributes (flow_direction, amount_bucket)
---
--- Star schema query pattern:
---   SELECT segment, SUM(amount)
---   FROM gold.fact_transactions f
---   JOIN gold.dim_customer c ON f.customer_key = c.customer_key
---   GROUP BY segment
---
--- Why LEFT JOIN to dims instead of INNER JOIN?
---   LEFT JOIN means: "keep the transaction even if the customer/account
---   dimension row is missing". This prevents silent data loss — you can
---   still see the transaction and investigate the broken FK.
+-- 6.36M rows of real mobile money transaction patterns from PaySim.
+-- Star schema center: FK to dim_customer, dim_account, dim_product.
+-- Includes fraud fields that power the fact_fraud_alerts mart.
 --
 -- Materialized as TABLE (largest table in the gold layer).
 
@@ -27,9 +14,6 @@ with txns as (
 
 ),
 
--- Only join to CURRENT customer records (is_current = true)
--- This gives us the customer's CURRENT segment on the transaction
--- For historical segment at transaction time, use valid_from/valid_to join
 dim_cust as (
 
     select * from {{ ref('dim_customer') }}
@@ -52,50 +36,57 @@ dim_prod as (
 final as (
 
     select
-        -- Natural key from source (UUID — unique per transaction)
         t.transaction_id,
 
-        -- Surrogate FK keys linking to dimension tables
-        -- NULL if the related dimension row doesn't exist (orphaned FK)
+        -- Surrogate FK keys
         dc.customer_key,
         da.account_key,
         dp.product_key,
 
-        -- Measures (additive — safe to SUM across any dimension)
+        -- Core measures
         t.amount,
-        abs(t.amount)                               as absolute_amount,
+        t.balance_before,
+        t.balance_after,
 
-        -- Derived attributes
+        -- Balance delta: how much the originator's balance changed
+        (t.balance_after - t.balance_before)    as balance_delta,
+
+        -- PaySim transaction attributes
         t.transaction_type,
         t.currency,
         t.merchant_category,
-        t.transaction_status,
+        t.orig_account_id,
+        t.dest_account_id,
 
-        -- Classify direction by sign of amount
-        -- (separate from transaction_type — a TRANSFER can be positive or negative)
+        -- Fraud intelligence
+        t.is_fraud,
+        t.is_flagged_fraud,
+        t.is_missed_fraud,   -- fraud that slipped past detection system
+
+        -- Amount buckets (adjusted for mobile money scale)
         case
-            when t.amount < 0 then 'OUTFLOW'
-            else                   'INFLOW'
-        end                                         as flow_direction,
+            when t.amount < 1_000       then 'MICRO'
+            when t.amount < 10_000      then 'SMALL'
+            when t.amount < 100_000     then 'MEDIUM'
+            when t.amount < 1_000_000   then 'LARGE'
+            else                             'XLARGE'
+        end                                     as amount_bucket,
 
-        -- Amount bucket for histogram / distribution analysis in dashboards
+        -- High-risk flag: large CASH_OUT or TRANSFER (common fraud pattern in PaySim)
         case
-            when abs(t.amount) < 100      then 'MICRO'
-            when abs(t.amount) < 1000     then 'SMALL'
-            when abs(t.amount) < 5000     then 'MEDIUM'
-            when abs(t.amount) < 10000    then 'LARGE'
-            else                               'XLARGE'
-        end                                         as amount_bucket,
+            when t.transaction_type in ('CASH_OUT', 'TRANSFER')
+             and t.amount > 200_000 then true
+            else false
+        end                                     as is_high_risk_pattern,
 
-        -- Date/time for time-series analysis
+        -- Dates
         t.transaction_date,
         t.created_at,
 
-        -- Denormalized customer attributes (avoids join at query time for common fields)
-        dc.segment                                  as customer_segment,
+        -- Denormalized for fast dashboard queries (avoids join at query time)
+        dc.segment                              as customer_segment,
         da.account_type,
 
-        -- Pipeline lineage
         t._batch_id
 
     from txns t

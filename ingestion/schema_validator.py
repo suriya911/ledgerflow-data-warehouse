@@ -24,16 +24,24 @@ log = logging.getLogger(__name__)
 # Canonical column -> expected pandas dtype string
 EXPECTED_SCHEMAS: dict[str, dict[str, str]] = {
     "transactions": {
-        "transaction_id": "object",
-        "account_id": "object",
-        "customer_id": "object",
-        "transaction_type": "object",
-        "amount": "float64",
-        "currency": "object",
+        # PaySim-mapped schema (see data_generator/load_paysim.py for column derivation)
+        "transaction_id":    "object",
+        "account_id":        "object",
+        "customer_id":       "object",
+        "transaction_type":  "object",
+        "amount":            "float64",
+        "currency":          "object",
         "merchant_category": "object",
-        "status": "object",
-        "transaction_date": "object",   # loaded as string; cast in dbt silver
-        "created_at": "object",
+        "orig_account_id":   "object",   # PaySim nameOrig — preserved for lineage
+        "dest_account_id":   "object",   # PaySim nameDest
+        "balance_before":    "float64",
+        "balance_after":     "float64",
+        "dest_balance_before": "float64",
+        "dest_balance_after":  "float64",
+        "is_fraud":          "int64",
+        "is_flagged_fraud":  "int64",
+        "transaction_date":  "object",
+        "created_at":        "object",
     },
     "customers": {
         "customer_id": "object",

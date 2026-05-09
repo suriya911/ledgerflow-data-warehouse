@@ -79,89 +79,69 @@ def build_bronze_transactions(validator) -> None:
     validator.expect_column_values_to_not_be_null("customer_id")
     validator.expect_column_values_to_not_be_null("amount")
     validator.expect_column_values_to_not_be_null("transaction_type")
-    validator.expect_column_values_to_not_be_null("status")
+    validator.expect_column_values_to_not_be_null("is_fraud")
+    validator.expect_column_values_to_not_be_null("is_flagged_fraud")
     validator.expect_column_values_to_not_be_null("created_at")
+    validator.expect_column_values_to_not_be_null("transaction_date")
 
-    # transaction_date: we EXPECT ~3% nulls (intentionally injected).
-    # mostly=0.95 means: PASS if ≥95% of rows are non-null.
-    # If nulls suddenly jump to 20%, this fails — catching upstream data rot.
-    validator.expect_column_values_to_not_be_null(
-        "transaction_date", mostly=0.95
-    )
-
-    # ── UNIQUENESS ──────────────────────────────────────────────────────────
-    # Each transaction must have a unique ID — duplicates = double-counting money
+    # Uniqueness
     validator.expect_column_values_to_be_unique("transaction_id")
 
-    # ── VALIDITY (enum columns) ─────────────────────────────────────────────
+    # PaySim transaction types
     validator.expect_column_values_to_be_in_set(
         "transaction_type",
-        ["DEBIT", "CREDIT", "TRANSFER", "WITHDRAWAL"],
+        ["CASH_OUT", "PAYMENT", "CASH_IN", "TRANSFER", "DEBIT"],
     )
-    validator.expect_column_values_to_be_in_set(
-        "status",
-        ["COMPLETED", "PENDING", "FAILED", "REVERSED"],
-    )
-    validator.expect_column_values_to_be_in_set(
-        "currency",
-        ["USD", "EUR", "GBP"],
-    )
+    validator.expect_column_values_to_be_in_set("currency", ["USD"])
     validator.expect_column_values_to_be_in_set(
         "merchant_category",
-        ["RETAIL", "FOOD", "TRAVEL", "UTILITIES", "HEALTHCARE"],
+        ["RETAIL", "FOOD", "TRAVEL", "UTILITIES", "HEALTHCARE", "TRANSFER"],
     )
 
-    # ── RANGE (business rules on amounts) ───────────────────────────────────
-    # Our generators go from -5000 to 10000, but in prod we allow wider range.
-    # Alert if any amount is outside business-plausible bounds.
+    # Fraud flag validity (0 or 1 integers in raw PaySim)
+    validator.expect_column_values_to_be_in_set("is_fraud", [0, 1])
+    validator.expect_column_values_to_be_in_set("is_flagged_fraud", [0, 1])
+
+    # PaySim mobile money scale: amounts always positive, can reach ~92M
     validator.expect_column_values_to_be_between(
-        "amount", min_value=-50_000, max_value=500_000
+        "amount", min_value=0, max_value=100_000_000
     )
 
-    # ── DISTRIBUTION (statistical anomaly detection) ─────────────────────────
-    # If average transaction amount suddenly doubles, something is wrong.
-    # We use mean to check distribution hasn't shifted drastically.
+    # PaySim mean amount is ~$179K. Alert if distribution shifts drastically.
     validator.expect_column_mean_to_be_between(
-        "amount", min_value=-1_000, max_value=10_000
+        "amount", min_value=50_000, max_value=500_000
     )
 
-    # ── SHAPE (row count sanity check) ──────────────────────────────────────
-    # Bronze should always receive at least 1000 rows per batch.
-    # If the generator or upstream breaks, this catches a near-empty load.
+    # Row count guard
     validator.expect_table_row_count_to_be_between(
         min_value=1_000, max_value=10_000_000
     )
 
-    # ── COLUMN PRESENCE (schema drift guard at GX level) ────────────────────
-    # Belt-and-suspenders: schema_validator.py catches this first,
-    # but GX also confirms all expected columns exist.
+    # Column presence check
     validator.expect_table_columns_to_match_set(
         {
             "transaction_id", "account_id", "customer_id", "transaction_type",
-            "amount", "currency", "merchant_category", "status",
+            "amount", "currency", "merchant_category",
+            "orig_account_id", "dest_account_id",
+            "balance_before", "balance_after",
+            "dest_balance_before", "dest_balance_after",
+            "is_fraud", "is_flagged_fraud",
             "transaction_date", "created_at",
             "_loaded_at", "_source_file", "_batch_id",
         },
-        exact_match=False,   # allow extra columns without failing
+        exact_match=False,
     )
 
-    # ── TYPE CHECKS ─────────────────────────────────────────────────────────
+    # Format checks
     validator.expect_column_values_to_match_regex(
         "transaction_id",
         r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-        mostly=0.99,   # allow 1% malformed UUIDs before alerting
+        mostly=0.99,
     )
+    validator.expect_column_values_to_match_regex("account_id", r"^ACC\d{4}$")
+    validator.expect_column_values_to_match_regex("customer_id", r"^CUST\d{3,4}$")
     validator.expect_column_values_to_match_regex(
-        "account_id", r"^ACC\d{4}$"
-    )
-    validator.expect_column_values_to_match_regex(
-        "customer_id", r"^CUST\d{3,4}$"   # CUST100-CUST1099
-    )
-
-    # ── FRESHNESS ───────────────────────────────────────────────────────────
-    # created_at must not be from before 2020 (stale data from wrong year)
-    validator.expect_column_values_to_match_strftime_format(
-        "created_at", strftime_format="%Y-%m-%dT%H:%M:%S", mostly=0.99
+        "orig_account_id", r"^[CM]\d+$", mostly=0.99
     )
 
 
@@ -217,41 +197,31 @@ def build_silver_transactions(validator) -> None:
       - No null amounts allowed at all (bronze had some; dbt filtered them)
     """
 
-    # After dbt filtering, NO nulls on critical columns
+    # No nulls on PaySim critical columns after dbt filtering
     validator.expect_column_values_to_not_be_null("transaction_id")
     validator.expect_column_values_to_not_be_null("amount")
     validator.expect_column_values_to_not_be_null("transaction_type")
-    validator.expect_column_values_to_not_be_null("transaction_status")
-
-    # transaction_date still has ~3% nulls even after staging
-    # (we preserve source truth in silver; GX confirms the rate hasn't worsened)
-    validator.expect_column_values_to_not_be_null(
-        "transaction_date", mostly=0.95
-    )
+    validator.expect_column_values_to_not_be_null("is_fraud")
+    validator.expect_column_values_to_not_be_null("is_flagged_fraud")
+    validator.expect_column_values_to_not_be_null("transaction_date")
 
     # Uniqueness
     validator.expect_column_values_to_be_unique("transaction_id")
 
-    # Validity — now uppercase-normalized by dbt
+    # PaySim types and currency
     validator.expect_column_values_to_be_in_set(
-        "transaction_type", ["DEBIT", "CREDIT", "TRANSFER", "WITHDRAWAL"]
+        "transaction_type", ["CASH_OUT", "PAYMENT", "CASH_IN", "TRANSFER", "DEBIT"]
     )
+    validator.expect_column_values_to_be_in_set("currency", ["USD"])
     validator.expect_column_values_to_be_in_set(
-        "transaction_status", ["COMPLETED", "PENDING", "FAILED", "REVERSED"]
-    )
-    validator.expect_column_values_to_be_in_set(
-        "currency", ["USD", "EUR", "GBP"]
-    )
-    validator.expect_column_values_to_be_in_set(
-        "merchant_category", ["RETAIL", "FOOD", "TRAVEL", "UTILITIES", "HEALTHCARE"]
+        "merchant_category", ["RETAIL", "FOOD", "TRAVEL", "UTILITIES", "HEALTHCARE", "TRANSFER"]
     )
 
-    # Range — same business bounds
+    # PaySim amounts are always positive and mobile-money scale
     validator.expect_column_values_to_be_between(
-        "amount", min_value=-50_000, max_value=500_000
+        "amount", min_value=0, max_value=100_000_000
     )
 
-    # Row count should match bronze minus the null-amount rows filtered in staging
     validator.expect_table_row_count_to_be_between(
         min_value=1_000, max_value=10_000_000
     )
