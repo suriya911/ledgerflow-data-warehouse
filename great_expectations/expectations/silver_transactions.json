@@ -26,15 +26,21 @@
     {
       "expectation_type": "expect_column_values_to_not_be_null",
       "kwargs": {
-        "column": "transaction_status"
+        "column": "is_fraud"
       },
       "meta": {}
     },
     {
       "expectation_type": "expect_column_values_to_not_be_null",
       "kwargs": {
-        "column": "transaction_date",
-        "mostly": 0.95
+        "column": "is_flagged_fraud"
+      },
+      "meta": {}
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": {
+        "column": "transaction_date"
       },
       "meta": {}
     },
@@ -50,23 +56,11 @@
       "kwargs": {
         "column": "transaction_type",
         "value_set": [
-          "DEBIT",
-          "CREDIT",
+          "CASH_OUT",
+          "PAYMENT",
+          "CASH_IN",
           "TRANSFER",
-          "WITHDRAWAL"
-        ]
-      },
-      "meta": {}
-    },
-    {
-      "expectation_type": "expect_column_values_to_be_in_set",
-      "kwargs": {
-        "column": "transaction_status",
-        "value_set": [
-          "COMPLETED",
-          "PENDING",
-          "FAILED",
-          "REVERSED"
+          "DEBIT"
         ]
       },
       "meta": {}
@@ -76,9 +70,7 @@
       "kwargs": {
         "column": "currency",
         "value_set": [
-          "USD",
-          "EUR",
-          "GBP"
+          "USD"
         ]
       },
       "meta": {}
@@ -92,7 +84,8 @@
           "FOOD",
           "TRAVEL",
           "UTILITIES",
-          "HEALTHCARE"
+          "HEALTHCARE",
+          "TRANSFER"
         ]
       },
       "meta": {}
@@ -101,8 +94,8 @@
       "expectation_type": "expect_column_values_to_be_between",
       "kwargs": {
         "column": "amount",
-        "max_value": 500000,
-        "min_value": -50000
+        "max_value": 100000000,
+        "min_value": 0
       },
       "meta": {}
     },
