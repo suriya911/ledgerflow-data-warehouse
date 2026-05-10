@@ -3,22 +3,42 @@ version: "3.8"
 x-airflow-common: &airflow-common
   image: apache/airflow:2.9.1
   environment:
+    # ── Airflow core ─────────────────────────────────────────────────────────
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://ledger:ledger@postgres:5432/ledgerflow
     AIRFLOW__CORE__FERNET_KEY: ""
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__WEBSERVER__SECRET_KEY: ledgerflow-dev-secret
+    # ── LedgerFlow pipeline settings ─────────────────────────────────────────
+    # REPO_ROOT: where the pipeline scripts live inside the container
+    REPO_ROOT: /opt/airflow/repo
+    # PIPELINE_PYTHON: which python interpreter to use for BashOperator tasks
+    PIPELINE_PYTHON: python
+    # DB_ENGINE: "duckdb" (local dev) or "postgres" (prod — set in Secrets Manager)
+    DB_ENGINE: "${DB_ENGINE:-postgres}"
+    DUCKDB_PATH: /opt/airflow/repo/ledgerflow.duckdb
+    # PostgreSQL connection (used when DB_ENGINE=postgres)
     DB_HOST: postgres
-    DB_PORT: 5432
+    DB_PORT: "5432"
     DB_USER: ledger
     DB_PASSWORD: ledger
     DB_NAME: ledgerflow
+    DATABASE_URL: "postgresql+psycopg2://ledger:ledger@postgres:5432/ledgerflow"
+    # AWS (override in prod via Secrets Manager or ECS task env)
+    AWS_REGION: "${AWS_REGION:-us-east-1}"
+    S3_BUCKET: "${S3_BUCKET:-}"
+    USE_S3: "${USE_S3:-false}"
   volumes:
+    # DAG files — Airflow picks up new DAGs without restart
     - ./airflow/dags:/opt/airflow/dags
-    - ./dbt_ledgerflow:/opt/dbt_ledgerflow
-    - ./data:/opt/data
-    - ./great_expectations:/opt/great_expectations
+    # Full repo mounted so BashOperator can call ingestion/, dbt_ledgerflow/, etc.
+    - .:/opt/airflow/repo
+    # dbt profiles.yml — kept separate so prod can override via Secret
+    - ./dbt_ledgerflow:/opt/airflow/repo/dbt_ledgerflow
+    # GX expectations and checkpoints (version-controlled)
+    - ./great_expectations:/opt/airflow/repo/great_expectations
+    # Airflow logs persist across container restarts
     - airflow-logs:/opt/airflow/logs
   depends_on:
     postgres:
@@ -46,6 +66,10 @@ services:
     command:
       - -c
       - |
+        pip install --quiet \
+          faker pandas duckdb duckdb-engine sqlalchemy \
+          dbt-core dbt-postgres dbt-duckdb \
+          great-expectations boto3 python-dotenv
         airflow db init
         airflow users create \
           --username admin \
