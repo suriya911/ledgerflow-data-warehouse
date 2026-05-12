@@ -1,0 +1,116 @@
+{
+  "_comment": "ECS Fargate task definition for the LedgerFlow Airflow webserver.",
+  "_usage": "Register with: aws ecs register-task-definition --cli-input-json file://aws/ecs_task_definition.json",
+  "_replace": "Replace <account-id> and <region> throughout this file.",
+
+  "family": "ledgerflow-airflow",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+
+  "executionRoleArn": "arn:aws:iam::<account-id>:role/ledgerflow-ecs-execution-role",
+  "taskRoleArn":      "arn:aws:iam::<account-id>:role/ledgerflow-ecs-task-role",
+
+  "containerDefinitions": [
+    {
+      "name": "airflow-webserver",
+      "image": "<account-id>.dkr.ecr.<region>.amazonaws.com/ledgerflow-airflow:latest",
+
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+
+      "command": ["webserver"],
+
+      "environment": [
+        { "name": "AIRFLOW__CORE__EXECUTOR",                  "value": "LocalExecutor" },
+        { "name": "AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION","value": "false" },
+        { "name": "AIRFLOW__CORE__LOAD_EXAMPLES",             "value": "false" },
+        { "name": "DB_ENGINE",                                 "value": "postgres" },
+        { "name": "REPO_ROOT",                                 "value": "/opt/airflow/repo" },
+        { "name": "PIPELINE_PYTHON",                           "value": "python" },
+        { "name": "AWS_REGION",                                "value": "<region>" },
+        { "name": "USE_S3",                                    "value": "true" },
+        { "name": "S3_BUCKET",                                 "value": "ledgerflow-raw-<account-id>" }
+      ],
+
+      "secrets": [
+        {
+          "name": "AIRFLOW__CORE__SQL_ALCHEMY_CONN",
+          "valueFrom": "arn:aws:secretsmanager:<region>:<account-id>:secret:ledgerflow/db:DATABASE_URL::"
+        },
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:<region>:<account-id>:secret:ledgerflow/db:DATABASE_URL::"
+        },
+        {
+          "name": "AIRFLOW__WEBSERVER__SECRET_KEY",
+          "valueFrom": "arn:aws:secretsmanager:<region>:<account-id>:secret:ledgerflow/airflow:SECRET_KEY::"
+        }
+      ],
+
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group":         "/ecs/ledgerflow-airflow",
+          "awslogs-region":        "<region>",
+          "awslogs-stream-prefix": "webserver"
+        }
+      },
+
+      "healthCheck": {
+        "command":     ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"],
+        "interval":    30,
+        "timeout":     10,
+        "retries":     3,
+        "startPeriod": 60
+      },
+
+      "essential": true
+    },
+
+    {
+      "name": "airflow-scheduler",
+      "image": "<account-id>.dkr.ecr.<region>.amazonaws.com/ledgerflow-airflow:latest",
+
+      "command": ["scheduler"],
+
+      "environment": [
+        { "name": "AIRFLOW__CORE__EXECUTOR",      "value": "LocalExecutor" },
+        { "name": "AIRFLOW__CORE__LOAD_EXAMPLES", "value": "false" },
+        { "name": "DB_ENGINE",                     "value": "postgres" },
+        { "name": "REPO_ROOT",                     "value": "/opt/airflow/repo" },
+        { "name": "PIPELINE_PYTHON",               "value": "python" },
+        { "name": "AWS_REGION",                    "value": "<region>" },
+        { "name": "USE_S3",                        "value": "true" },
+        { "name": "S3_BUCKET",                     "value": "ledgerflow-raw-<account-id>" }
+      ],
+
+      "secrets": [
+        {
+          "name": "AIRFLOW__CORE__SQL_ALCHEMY_CONN",
+          "valueFrom": "arn:aws:secretsmanager:<region>:<account-id>:secret:ledgerflow/db:DATABASE_URL::"
+        },
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:<region>:<account-id>:secret:ledgerflow/db:DATABASE_URL::"
+        }
+      ],
+
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group":         "/ecs/ledgerflow-airflow",
+          "awslogs-region":        "<region>",
+          "awslogs-stream-prefix": "scheduler"
+        }
+      },
+
+      "essential": true
+    }
+  ]
+}
