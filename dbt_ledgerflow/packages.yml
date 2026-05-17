@@ -1,0 +1,12 @@
+# dbt packages — third-party macros and helpers
+# Install with: dbt deps
+#
+# dbt-utils provides:
+#   generate_surrogate_key() — MD5 hash of multiple columns to create a stable PK
+#   date_spine()             — generate a date series
+#   pivot()                  — SQL pivot helper
+#   ... and 50+ other utilities
+
+packages:
+  - package: dbt-labs/dbt_utils
+    version: 1.2.0

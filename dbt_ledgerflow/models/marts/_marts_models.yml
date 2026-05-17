@@ -1,0 +1,75 @@
+version: 2
+
+models:
+  - name: dim_customer
+    description: "SCD Type 2 customer dimension. One row per customer VERSION. Use is_current=true for current state."
+    columns:
+      - name: customer_key
+        description: "Surrogate key — MD5(customer_id + updated_at). Unique per version."
+        tests:
+          - not_null
+          - unique
+      - name: customer_natural_key
+        tests:
+          - not_null
+      - name: is_current
+        tests:
+          - not_null
+      - name: valid_from
+        tests:
+          - not_null
+      - name: valid_to
+        tests:
+          - not_null
+      - name: segment
+        tests:
+          - accepted_values:
+              values: ["RETAIL", "PREMIUM", "CORPORATE"]
+
+  - name: dim_account
+    description: "Account dimension (Type 1 — current state only)"
+    columns:
+      - name: account_key
+        tests:
+          - not_null
+          - unique
+      - name: account_natural_key
+        tests:
+          - not_null
+          - unique
+      - name: account_type
+        tests:
+          - accepted_values:
+              values: ["CHECKING", "SAVINGS", "LOAN"]
+
+  - name: dim_product
+    description: "Product dimension derived from distinct product_ids in accounts"
+    columns:
+      - name: product_key
+        tests:
+          - not_null
+          - unique
+      - name: product_tier
+        tests:
+          - accepted_values:
+              values: ["BASIC", "PREMIUM", "CORPORATE", "SPECIALIZED"]
+
+  - name: fact_transactions
+    description: "Central fact table — one row per transaction, FK to all dimensions"
+    columns:
+      - name: transaction_id
+        description: "Natural UUID PK from source system"
+        tests:
+          - not_null
+          - unique
+      - name: amount
+        tests:
+          - not_null
+      - name: flow_direction
+        tests:
+          - accepted_values:
+              values: ["INFLOW", "OUTFLOW"]
+      - name: amount_bucket
+        tests:
+          - accepted_values:
+              values: ["MICRO", "SMALL", "MEDIUM", "LARGE", "XLARGE"]
