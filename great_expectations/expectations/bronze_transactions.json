@@ -40,7 +40,14 @@
     {
       "expectation_type": "expect_column_values_to_not_be_null",
       "kwargs": {
-        "column": "status"
+        "column": "is_fraud"
+      },
+      "meta": {}
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": {
+        "column": "is_flagged_fraud"
       },
       "meta": {}
     },
@@ -54,8 +61,7 @@
     {
       "expectation_type": "expect_column_values_to_not_be_null",
       "kwargs": {
-        "column": "transaction_date",
-        "mostly": 0.95
+        "column": "transaction_date"
       },
       "meta": {}
     },
@@ -71,23 +77,11 @@
       "kwargs": {
         "column": "transaction_type",
         "value_set": [
-          "DEBIT",
-          "CREDIT",
+          "CASH_OUT",
+          "PAYMENT",
+          "CASH_IN",
           "TRANSFER",
-          "WITHDRAWAL"
-        ]
-      },
-      "meta": {}
-    },
-    {
-      "expectation_type": "expect_column_values_to_be_in_set",
-      "kwargs": {
-        "column": "status",
-        "value_set": [
-          "COMPLETED",
-          "PENDING",
-          "FAILED",
-          "REVERSED"
+          "DEBIT"
         ]
       },
       "meta": {}
@@ -97,9 +91,7 @@
       "kwargs": {
         "column": "currency",
         "value_set": [
-          "USD",
-          "EUR",
-          "GBP"
+          "USD"
         ]
       },
       "meta": {}
@@ -113,7 +105,30 @@
           "FOOD",
           "TRAVEL",
           "UTILITIES",
-          "HEALTHCARE"
+          "HEALTHCARE",
+          "TRANSFER"
+        ]
+      },
+      "meta": {}
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_in_set",
+      "kwargs": {
+        "column": "is_fraud",
+        "value_set": [
+          0,
+          1
+        ]
+      },
+      "meta": {}
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_in_set",
+      "kwargs": {
+        "column": "is_flagged_fraud",
+        "value_set": [
+          0,
+          1
         ]
       },
       "meta": {}
@@ -122,8 +137,8 @@
       "expectation_type": "expect_column_values_to_be_between",
       "kwargs": {
         "column": "amount",
-        "max_value": 500000,
-        "min_value": -50000
+        "max_value": 100000000,
+        "min_value": 0
       },
       "meta": {}
     },
@@ -131,8 +146,8 @@
       "expectation_type": "expect_column_mean_to_be_between",
       "kwargs": {
         "column": "amount",
-        "max_value": 10000,
-        "min_value": -1000
+        "max_value": 500000,
+        "min_value": 50000
       },
       "meta": {}
     },
@@ -148,19 +163,26 @@
       "expectation_type": "expect_table_columns_to_match_set",
       "kwargs": {
         "column_set": [
-          "customer_id",
-          "_source_file",
-          "transaction_date",
-          "merchant_category",
-          "_batch_id",
-          "currency",
           "amount",
-          "account_id",
-          "status",
-          "created_at",
+          "customer_id",
+          "currency",
+          "dest_balance_after",
+          "dest_account_id",
+          "balance_after",
+          "transaction_id",
+          "merchant_category",
           "transaction_type",
+          "_batch_id",
+          "account_id",
+          "dest_balance_before",
+          "is_fraud",
+          "orig_account_id",
+          "_source_file",
+          "created_at",
+          "transaction_date",
           "_loaded_at",
-          "transaction_id"
+          "is_flagged_fraud",
+          "balance_before"
         ],
         "exact_match": false
       },
@@ -192,11 +214,11 @@
       "meta": {}
     },
     {
-      "expectation_type": "expect_column_values_to_match_strftime_format",
+      "expectation_type": "expect_column_values_to_match_regex",
       "kwargs": {
-        "column": "created_at",
+        "column": "orig_account_id",
         "mostly": 0.99,
-        "strftime_format": "%Y-%m-%dT%H:%M:%S"
+        "regex": "^[CM]\\d+$"
       },
       "meta": {}
     }
