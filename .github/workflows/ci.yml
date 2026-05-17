@@ -1,0 +1,204 @@
+# LedgerFlow CI pipeline
+#
+# Triggers:
+#   - Every push to main or dev
+#   - Every pull request targeting main
+#
+# What it does:
+#   1. Spin up a PostgreSQL 15 service container
+#   2. Install all Python dependencies
+#   3. Generate synthetic test data (Faker — not PaySim, which is 470 MB)
+#   4. Load bronze layer into PostgreSQL
+#   5. Run Great Expectations bronze checkpoint
+#   6. dbt deps + dbt run --target ci  (silver + gold against PostgreSQL)
+#   7. dbt test
+#   8. Run Great Expectations silver checkpoint
+#   9. (main only) Build Docker image and push to AWS ECR
+#
+# Why synthetic data in CI:
+#   PaySim CSV is 470 MB — too large to commit to git and too slow to download
+#   in every CI run. The 50 K-row Faker dataset tests the same code paths
+#   (schema drift detection, dbt models, GX rules) in under 2 minutes.
+#   PaySim is used locally and in prod for real fraud-pattern analysis.
+#
+# Secrets required in GitHub repo settings:
+#   AWS_ACCESS_KEY_ID      — IAM user with ECR push access
+#   AWS_SECRET_ACCESS_KEY
+#   AWS_REGION             — e.g., us-east-1
+#   ECR_REPOSITORY         — full ECR URI: <account>.dkr.ecr.<region>.amazonaws.com/ledgerflow-airflow
+
+name: LedgerFlow CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+env:
+  # Pipeline uses PostgreSQL in CI (not DuckDB)
+  DB_ENGINE: postgres
+  DB_HOST: localhost
+  DB_PORT: "5432"
+  DB_USER: ledger
+  DB_PASSWORD: ledger
+  DB_NAME: ledgerflow
+  DATABASE_URL: "postgresql+psycopg2://ledger:ledger@localhost:5432/ledgerflow"
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # ── Job 1: Full pipeline validation ────────────────────────────────────────
+  pipeline:
+    name: Pipeline (Bronze → Silver → Gold)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: ledger
+          POSTGRES_PASSWORD: ledger
+          POSTGRES_DB: ledgerflow
+        ports:
+          - 5432:5432
+        # Wait for PostgreSQL to accept connections before running steps
+        options: >-
+          --health-cmd "pg_isready -U ledger -d ledgerflow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      # ── Setup ──────────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install \
+            faker pandas psycopg2-binary sqlalchemy python-dotenv \
+            dbt-core dbt-postgres dbt-duckdb \
+            great-expectations \
+            boto3
+
+      # ── Step 1: Generate synthetic test data ───────────────────────────────
+      # 50K Faker transactions (not PaySim) — fast enough for CI
+      - name: Generate synthetic data
+        run: |
+          python data_generator/generate_customers.py
+          python data_generator/generate_accounts.py
+          python data_generator/generate_loans.py
+          python data_generator/generate_transactions.py
+          echo "=== Generated row counts ==="
+          wc -l data/raw/*.csv
+
+      # ── Step 2: Create PostgreSQL schemas ──────────────────────────────────
+      # dbt creates its own schemas (main_silver, main_gold) automatically,
+      # but bronze must exist before load_bronze.py runs the first INSERT.
+      - name: Create database schemas
+        run: |
+          PGPASSWORD=ledger psql -h localhost -U ledger -d ledgerflow -c "
+            CREATE SCHEMA IF NOT EXISTS bronze;
+            CREATE SCHEMA IF NOT EXISTS main_silver;
+            CREATE SCHEMA IF NOT EXISTS main_gold;
+          "
+
+      # ── Step 3: Bronze ingestion ───────────────────────────────────────────
+      - name: Load bronze layer
+        run: python ingestion/load_bronze.py
+
+      # ── Step 4: Great Expectations bronze checkpoint ───────────────────────
+      # Rebuilds GX suites from the CI data first, then validates.
+      # The expectation JSONs in git were built from PaySim (6.36M rows);
+      # CI data is Faker (50K rows) so we regenerate suites here.
+      - name: Build GX expectation suites (CI data)
+        working-directory: great_expectations
+        run: python build_expectations.py
+
+      - name: Validate bronze layer (GX checkpoint)
+        working-directory: great_expectations
+        run: python run_validations.py bronze
+
+      # ── Step 5: dbt silver (staging views) ────────────────────────────────
+      - name: Install dbt packages
+        working-directory: dbt_ledgerflow
+        run: dbt deps --profiles-dir .
+
+      - name: Run dbt staging models
+        working-directory: dbt_ledgerflow
+        run: dbt run --profiles-dir . --target ci --select staging
+
+      # ── Step 6: Great Expectations silver checkpoint ───────────────────────
+      - name: Validate silver layer (GX checkpoint)
+        working-directory: great_expectations
+        run: python run_validations.py silver
+
+      # ── Step 7: dbt gold (marts) ───────────────────────────────────────────
+      - name: Run dbt gold models
+        working-directory: dbt_ledgerflow
+        run: dbt run --profiles-dir . --target ci --select marts intermediate
+
+      # ── Step 8: dbt tests ──────────────────────────────────────────────────
+      - name: Run dbt tests
+        working-directory: dbt_ledgerflow
+        run: dbt test --profiles-dir . --target ci
+
+      # ── Step 9: Upload GX Data Docs as artifact ────────────────────────────
+      # After each CI run you can download and open the HTML quality report.
+      - name: Upload GX Data Docs
+        if: always()   # upload even when tests fail — useful for debugging
+        uses: actions/upload-artifact@v4
+        with:
+          name: gx-data-docs
+          path: great_expectations/uncommitted/data_docs/
+          retention-days: 7
+
+  # ── Job 2: Docker image build + ECR push (main branch only) ───────────────
+  docker-publish:
+    name: Build & Push Docker image to ECR
+    runs-on: ubuntu-latest
+    needs: pipeline          # only runs if the pipeline job passes
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Build the Airflow image with pipeline dependencies baked in
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+                       -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+                       -f airflow/Dockerfile .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Summary
+        run: |
+          echo "### Docker image pushed to ECR" >> $GITHUB_STEP_SUMMARY
+          echo "- Registry: ${{ steps.login-ecr.outputs.registry }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Tag: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Also tagged as: latest" >> $GITHUB_STEP_SUMMARY

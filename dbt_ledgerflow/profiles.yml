@@ -19,14 +19,16 @@ ledgerflow:
       # DuckDB creates schemas automatically — no manual CREATE SCHEMA needed
 
     # ── CI: PostgreSQL spun up by GitHub Actions service container ──────────
+    # schema: main so dbt creates main_silver / main_gold — matching the
+    # schema names that Great Expectations checkpoints query.
     ci:
       type: postgres
-      host: localhost
-      port: 5432
-      user: ledger
-      password: ledger
-      dbname: ledgerflow
-      schema: public
+      host: "{{ env_var('DB_HOST', 'localhost') }}"
+      port: "{{ env_var('DB_PORT', '5432') | int }}"
+      user: "{{ env_var('DB_USER', 'ledger') }}"
+      password: "{{ env_var('DB_PASSWORD', 'ledger') }}"
+      dbname: "{{ env_var('DB_NAME', 'ledgerflow') }}"
+      schema: main
       threads: 4
 
     # ── Production: AWS RDS PostgreSQL ─────────────────────────────────────
