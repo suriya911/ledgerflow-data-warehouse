@@ -1,0 +1,40 @@
+# Bronze layer checkpoint
+# Run via: python great_expectations/run_validations.py bronze
+# Or in Airflow: BashOperator(bash_command="cd /opt && python great_expectations/run_validations.py bronze")
+#
+# Suites validated:
+#   bronze_transactions -> bronze.transactions
+#   bronze_customers    -> bronze.customers
+#
+# When this checkpoint should run:
+#   AFTER load_bronze.py (data landed in bronze)
+#   BEFORE dbt run --select staging (silver transformation)
+#
+# Failure behaviour:
+#   Exit code 1 -> Airflow task fails -> downstream dbt tasks do not run
+
+name: bronze_checkpoint
+config_version: 1.0
+class_name: SimpleCheckpoint
+run_name_template: "%Y%m%d-%H%M%S-bronze"
+
+validations:
+  - batch_request:
+      datasource_name: runtime_pandas
+      data_connector_name: default_runtime_data_connector_name
+      data_asset_name: transactions
+      runtime_parameters:
+        batch_data: "__loaded_at_runtime__"
+      batch_identifiers:
+        default_identifier_name: bronze_transactions
+    expectation_suite_name: bronze_transactions
+
+  - batch_request:
+      datasource_name: runtime_pandas
+      data_connector_name: default_runtime_data_connector_name
+      data_asset_name: customers
+      runtime_parameters:
+        batch_data: "__loaded_at_runtime__"
+      batch_identifiers:
+        default_identifier_name: bronze_customers
+    expectation_suite_name: bronze_customers
