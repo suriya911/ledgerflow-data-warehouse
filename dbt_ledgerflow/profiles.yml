@@ -1,0 +1,42 @@
+# dbt connection profiles
+# Never commit real credentials here — use env vars ({{ env_var('DB_PASSWORD') }})
+#
+# How to use:
+#   Local dev  -> dbt run                   (uses 'dev' target = DuckDB, no server)
+#   CI         -> dbt run --target ci       (uses 'ci' target  = PostgreSQL in GitHub Actions)
+#   Production -> dbt run --target prod     (uses 'prod' target = AWS RDS)
+
+ledgerflow:
+  target: dev
+
+  outputs:
+
+    # ── Local development: DuckDB (zero infrastructure) ────────────────────
+    dev:
+      type: duckdb
+      path: ../ledgerflow.duckdb   # relative to dbt_ledgerflow/; file at repo root
+      threads: 4
+      # DuckDB creates schemas automatically — no manual CREATE SCHEMA needed
+
+    # ── CI: PostgreSQL spun up by GitHub Actions service container ──────────
+    ci:
+      type: postgres
+      host: localhost
+      port: 5432
+      user: ledger
+      password: ledger
+      dbname: ledgerflow
+      schema: public
+      threads: 4
+
+    # ── Production: AWS RDS PostgreSQL ─────────────────────────────────────
+    prod:
+      type: postgres
+      host: "{{ env_var('DB_HOST') }}"
+      port: "{{ env_var('DB_PORT', '5432') | int }}"
+      user: "{{ env_var('DB_USER') }}"
+      password: "{{ env_var('DB_PASSWORD') }}"
+      dbname: "{{ env_var('DB_NAME', 'ledgerflow') }}"
+      schema: gold
+      threads: 8
+      connect_timeout: 10

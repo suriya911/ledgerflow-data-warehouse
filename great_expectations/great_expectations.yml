@@ -1,0 +1,75 @@
+# Great Expectations Data Context configuration
+# GX version: 0.18.x (classic file-based context)
+#
+# This file tells GX:
+#   - Where to store expectation suites (JSON files in expectations/)
+#   - Where to store validation results (uncommitted/ — git-ignored)
+#   - Where to write the HTML Data Docs site (uncommitted/data_docs/)
+#
+# Run build_expectations.py once to generate the expectation suites.
+# Run run_validations.py to execute checkpoints (what Airflow calls daily).
+
+config_version: 3.0
+
+datasources: {}   # datasources are defined in code (build_expectations.py)
+
+stores:
+  expectations_store:
+    class_name: ExpectationsStore
+    store_backend:
+      class_name: TupleFilesystemStoreBackend
+      base_directory: expectations/
+
+  validations_store:
+    class_name: ValidationsStore
+    store_backend:
+      class_name: TupleFilesystemStoreBackend
+      base_directory: uncommitted/validations/
+
+  checkpoint_store:
+    class_name: CheckpointStore
+    store_backend:
+      class_name: TupleFilesystemStoreBackend
+      suppress_store_backend_id: true
+      base_directory: checkpoints/
+
+  evaluation_parameter_store:
+    class_name: EvaluationParameterStore
+expectations_store_name: expectations_store
+validations_store_name: validations_store
+checkpoint_store_name: checkpoint_store
+evaluation_parameter_store_name: evaluation_parameter_store
+
+data_docs_sites:
+  local_site:
+    class_name: SiteBuilder
+    show_how_to_buttons: false
+    store_backend:
+      class_name: TupleFilesystemStoreBackend
+      base_directory: uncommitted/data_docs/local_site/
+    site_index_builder:
+      class_name: DefaultSiteIndexBuilder
+
+anonymous_usage_statistics:
+  data_context_id: 661664b3-5d51-4c5d-a5b9-175516205217
+  enabled: false
+fluent_datasources:
+  pandas_runtime:
+    type: pandas
+    assets:
+      bronze_transactions_run_asset:
+        type: dataframe
+        batch_metadata: {}
+      bronze_customers_run_asset:
+        type: dataframe
+        batch_metadata: {}
+      silver_transactions_run_asset:
+        type: dataframe
+        batch_metadata: {}
+plugins_directory:
+notebooks:
+config_variables_file_path:
+include_rendered_content:
+  globally: false
+  expectation_suite: false
+  expectation_validation_result: false

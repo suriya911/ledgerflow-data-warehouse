@@ -1,0 +1,76 @@
+# _sources.yml — tells dbt where the raw (bronze) tables live
+#
+# {{ source('bronze', 'transactions') }} in any model resolves to this.
+# dbt uses this to:
+#   1. Build lineage: "fact_transactions depends on bronze.transactions"
+#   2. Run source freshness checks: dbt source freshness
+#   3. Generate documentation automatically
+
+version: 2
+
+sources:
+  - name: bronze
+    description: "Raw ingestion layer — data landed exactly as received from upstream, with audit metadata added by load_bronze.py"
+    schema: bronze
+
+    tables:
+      - name: transactions
+        description: "50 000 raw banking transactions per daily batch"
+        columns:
+          - name: transaction_id
+            description: "UUID assigned by the upstream system"
+          - name: account_id
+          - name: customer_id
+          - name: transaction_type
+            description: "DEBIT | CREDIT | TRANSFER | WITHDRAWAL"
+          - name: amount
+            description: "Positive or negative; sign indicates direction"
+          - name: currency
+          - name: merchant_category
+          - name: status
+          - name: transaction_date
+            description: "~3% nulls injected intentionally for GX testing"
+          - name: created_at
+          - name: _loaded_at
+            description: "Timestamp when this row was written to bronze by load_bronze.py"
+          - name: _source_file
+          - name: _batch_id
+
+      - name: customers
+        description: "1 000 unique customers; ~30% have 2 rows (SCD2 version history)"
+        columns:
+          - name: customer_id
+          - name: full_name
+          - name: email
+          - name: phone
+          - name: address
+          - name: segment
+            description: "RETAIL | PREMIUM | CORPORATE"
+          - name: kyc_status
+            description: "VERIFIED | PENDING | FAILED | EXPIRED"
+          - name: created_at
+          - name: updated_at
+
+      - name: accounts
+        description: "3 000 bank accounts (CHECKING / SAVINGS / LOAN)"
+        columns:
+          - name: account_id
+          - name: customer_id
+          - name: account_type
+          - name: balance
+          - name: opened_date
+          - name: status
+          - name: product_id
+
+      - name: loans
+        description: "500 loan records with principal, rate, term, and status"
+        columns:
+          - name: loan_id
+          - name: customer_id
+          - name: account_id
+          - name: principal
+          - name: interest_rate
+          - name: term_months
+          - name: disbursement_date
+          - name: maturity_date
+          - name: status

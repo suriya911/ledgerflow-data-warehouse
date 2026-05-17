@@ -1,0 +1,33 @@
+name: 'dbt_ledgerflow'
+version: '1.0.0'
+config-version: 2
+
+# The profile name must match a key in profiles.yml
+profile: 'ledgerflow'
+
+# Where dbt looks for each type of file
+model-paths:      ["models"]
+test-paths:       ["tests"]
+macro-paths:      ["macros"]
+snapshot-paths:   ["snapshots"]
+seed-paths:       ["seeds"]
+analysis-paths:   ["analyses"]
+docs-paths:       ["docs"]
+target-path:      "target"
+clean-targets:    ["target", "dbt_packages"]
+
+# Default materializations per layer
+# Overridden per-model with {{ config(...) }} at the top of each .sql file
+models:
+  dbt_ledgerflow:
+    staging:
+      +materialized: view       # Silver = views: always fresh, zero storage cost
+      +schema: silver
+
+    intermediate:
+      +materialized: table      # Intermediate = tables: pre-computed joins
+      +schema: silver
+
+    marts:
+      +materialized: table      # Gold = tables: fast analytical queries
+      +schema: gold

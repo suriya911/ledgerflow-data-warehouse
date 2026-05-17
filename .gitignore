@@ -1,0 +1,52 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Generated data (raw CSVs go to S3 in prod)
+data/raw/
+data/processed/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# dbt
+dbt_ledgerflow/target/
+dbt_ledgerflow/dbt_packages/
+dbt_ledgerflow/logs/
+
+# Great Expectations
+great_expectations/uncommitted/
+great_expectations/.ge_store_backend_id
+
+# Airflow
+airflow/logs/
+airflow/plugins/
+
+# Node / Next.js
+dashboard/node_modules/
+dashboard/.next/
+dashboard/out/
+dashboard/.vercel/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# DuckDB local database file
+*.duckdb
+*.duckdb.wal

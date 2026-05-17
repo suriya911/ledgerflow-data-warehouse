@@ -1,0 +1,23 @@
+# Data generation
+faker==24.11.0
+pandas==2.2.2
+
+# Database
+psycopg2-binary==2.9.9
+sqlalchemy==2.0.30
+
+# dbt
+dbt-core==1.8.3
+dbt-postgres==1.8.2
+
+# Data quality
+great-expectations==0.18.19
+
+# AWS
+boto3==1.34.131
+
+# Airflow (install separately via Docker; listed here for reference)
+# apache-airflow==2.9.1
+
+# Utilities
+python-dotenv==1.0.1
