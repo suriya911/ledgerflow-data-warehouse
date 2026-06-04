@@ -1,0 +1,23 @@
+# Sources for the FUSION pipeline — both raw source systems landed by
+# ingestion/load_fusion_bronze.py. Named 'fusion_bronze' to coexist with the
+# existing 'bronze' source used by the original PaySim-synthetic models.
+
+version: 2
+
+sources:
+  - name: fusion_bronze
+    description: "Raw landing zone for the two integrated payment platforms (IBM card + PaySim mobile money)"
+    schema: bronze
+    tables:
+      - name: ibm_transactions
+        description: "~13.3M IBM credit-card transactions (CARD channel)"
+      - name: ibm_users
+        description: "~2,000 real customers — the shared customer master"
+      - name: ibm_cards
+        description: "~6,146 payment cards"
+      - name: ibm_mcc
+        description: "MCC code -> merchant category lookup"
+      - name: ibm_fraud_labels
+        description: "Fraud labels (Yes/No) for ~8.9M of the IBM transactions"
+      - name: paysim_transactions
+        description: "~6.36M PaySim mobile-money transactions (MOBILE_MONEY channel)"

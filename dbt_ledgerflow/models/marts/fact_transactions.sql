@@ -6,11 +6,26 @@
 --
 -- Materialized as TABLE (largest table in the gold layer).
 
-{{ config(materialized='table') }}
+{{
+  config(
+    materialized='incremental',
+    unique_key='transaction_id',
+    incremental_strategy='delete+insert'
+  )
+}}
 
 with txns as (
 
     select * from {{ ref('stg_transactions') }}
+
+    {% if is_incremental() %}
+    -- Incremental watermark: only process rows that arrived after the latest
+    -- transaction already in this fact table. On the first run (table empty)
+    -- this branch is skipped and ALL rows are loaded (full historical build).
+    -- On daily runs it scans only the new batch instead of the whole history —
+    -- this is the core of the time-reduction benchmark (see benchmarks/).
+    where created_at > (select coalesce(max(created_at), timestamp '1900-01-01') from {{ this }})
+    {% endif %}
 
 ),
 

@@ -17,21 +17,6 @@ dependencies:
   - psycopg2=2.9.9          # PostgreSQL driver (production / Docker)
   - sqlalchemy=2.0.30
 
-  # Local dev database (no server needed)
-  - duckdb=0.10.3
-  - pip:
-    - duckdb-engine==0.13.2   # SQLAlchemy dialect for DuckDB
-
-  # dbt (transform layer)
-  - pip:
-    - dbt-core==1.8.3
-    - dbt-postgres==1.8.2
-    - dbt-duckdb==1.8.1       # dbt adapter for local DuckDB dev
-
-  # Data quality
-  - pip:
-    - great-expectations==0.18.19
-
   # AWS SDK
   - boto3=1.34.131
 
@@ -42,3 +27,12 @@ dependencies:
   # Jupyter (optional, for exploration)
   - jupyterlab=4.2.1
   - ipykernel=6.29.4
+
+  # NOTE: conda honors only ONE `pip:` block under dependencies. All pip-installed
+  # packages MUST live in this single list, or earlier blocks are silently dropped.
+  - pip:
+    - duckdb-engine==0.13.2   # SQLAlchemy dialect for DuckDB (used by Great Expectations)
+    - dbt-core==1.8.3
+    - dbt-postgres==1.8.2
+    - dbt-duckdb==1.8.1       # dbt adapter for local DuckDB dev (pulls duckdb>=1.x)
+    - great-expectations==0.18.19

@@ -27,6 +27,9 @@ dbt_ledgerflow/logs/
 # Great Expectations
 great_expectations/uncommitted/
 great_expectations/.ge_store_backend_id
+great_expectations/data/
+# Auto-created default GX context scaffold
+gx/
 
 # Airflow
 airflow/logs/
