@@ -118,12 +118,31 @@ Deploy: connect the repo to Vercel, set `DATABASE_URL` env var, push to main.
 
 ---
 
+## Performance: Incremental Load Benchmark
+
+`fact_transactions` is a dbt **incremental** model — each daily run processes only
+new rows (via a `created_at` watermark) instead of rebuilding the full history.
+Measured on local DuckDB ([details + reproduce](BENCHMARK.md)):
+
+| Base history | Daily delta | Full-refresh | Incremental | **Reduction** |
+|---:|---:|---:|---:|---:|
+| 1,000,000 | 50,000 | 2.65 s | 0.53 s | **80.0 %** |
+| 3,000,000 | 100,000 | 7.64 s | 0.88 s | **88.5 %** |
+
+As history tripled, full-refresh time grew ~linearly while incremental stayed
+nearly flat — so the saving **grows with scale**. Both paths are verified to
+produce identical row counts (idempotent `delete+insert` on `transaction_id`).
+
+```bash
+python benchmarks/benchmark_incremental.py 1000000 50000
+```
+
 ## Key Numbers
 
-- 500K+ records ingested per day (across 4 sources)
-- 80+ Great Expectations validation rules
+- 1M–3M+ transactions processed per benchmark run (scales to PaySim's 6.36M real rows)
+- ~80–88% faster daily fact builds via incremental loading vs full refresh
+- 36 Great Expectations checks (bronze) + 48 dbt tests, all gating the pipeline
 - SCD Type 2 on `dim_customer` — tracks segment and KYC changes over time
-- Incremental dbt models — only new rows processed on each run
 - Full CI pipeline on every PR via GitHub Actions
 
 ---
